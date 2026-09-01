@@ -20,6 +20,8 @@
     <string name="key_version">version</string>
     <string name="key_goto_settings">goto_settings</string>
     <string name="key_debug">debug</string>
+    <string name="key_remove_ads">remove_ads</string>
+    <string name="key_no_nick_cooldown">no_nick_cooldown</string>
     <string name="key_double_nickname_length">double_nickname_length</string>
     <string name="key_remove_restriction_on_nickname">remove_restriction_on_nickname</string>
 </resources>

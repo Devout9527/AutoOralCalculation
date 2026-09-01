@@ -98,7 +98,6 @@ abstract class BaseHook {
             RecognizerHook().startHookCatching()
             WebViewHook().startHookCatching()
             SettingHook().startHookCatching()
-            RetrofitHook().startHookCatching()
             NicknameHook().startHookCatching()
         }
     }

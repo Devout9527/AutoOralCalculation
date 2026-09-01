@@ -1,7 +1,9 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
 import cn.tinyhai.auto_oral_calculation.PATTERN_NICKNAME
+import cn.tinyhai.auto_oral_calculation.util.Clean
 import cn.tinyhai.auto_oral_calculation.util.Common
+import cn.tinyhai.auto_oral_calculation.util.logI
 import java.nio.charset.Charset
 import java.util.regex.Pattern
 
@@ -23,6 +25,20 @@ class NicknameHook : BaseHook() {
             (param.result as? ByteArray)?.let {
                 param.result = it.copyOf(it.size / 2)
             }
+        }
+
+        // 去除改名时间冷却：hook UserVO.getNicknameUpdatedTime，返回很久前的时间（冷却早已过）
+        runCatching {
+            val userVoClass = findClass("com.yuanfudao.android.leo.user.data.UserVO")
+            userVoClass.allMethod("getNicknameUpdatedTime").before { param ->
+                val on: Boolean = runCatching { Clean.noNickCooldown }.getOrDefault(false)
+                if (on) {
+                    // 返回 2 天前，使 now - updatedTime > 86400000，绕过"1天内只能改一次"
+                    param.result = System.currentTimeMillis() - 2 * 86400000L
+                }
+            }
+        }.onFailure {
+            logI("name cooldown hook fail: $it")
         }
     }
 }

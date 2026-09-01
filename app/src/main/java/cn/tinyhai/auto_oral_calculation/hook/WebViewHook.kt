@@ -190,8 +190,6 @@ class WebViewHook : BaseHook() {
         }
 
         hookJsLoadComplete()
-
-        hookWebSocketDump()
     }
 
     private fun hookJsLoadComplete() {
@@ -265,42 +263,6 @@ class WebViewHook : BaseHook() {
         }
     }
 
-    // 抓取 PK 对战 WebSocket 发出的消息（Debug 开启时），用于分析诗词/单词PK 协议
-    private fun hookWebSocketDump() {
-        // 注意：不要在此处读 Debug.debug / modulePrefs —— startHook 时 currentApplication() 为 null 会崩。
-        // 改为在回调查询时再判断（此时 App 已运行）。
-        fun debugOn(): Boolean = runCatching {
-            android.app.AndroidAppHelper.currentApplication() != null && Debug.debug
-        }.getOrDefault(false)
-        runCatching {
-            val realWs = findClass("okhttp3.internal.ws.RealWebSocket")
-            // 文本帧
-            runCatching {
-                realWs.findMethod("send", String::class.java).before { param ->
-                    if (!debugOn()) return@before
-                    val msg = param.args[0] as? String ?: return@before
-                    logI("WS send(text): " + msg.take(1000))
-                }
-            }
-            // 二进制帧 (okio ByteString)
-            runCatching {
-                val byteStringClass = findClass("okio.ByteString")
-                realWs.findMethod("send", byteStringClass).before { param ->
-                    if (!debugOn()) return@before
-                    val bs = param.args[0]
-                    if (bs != null) {
-                        val bytes = runCatching {
-                            (bs::class.java.getMethod("toByteArray")).invoke(bs) as ByteArray
-                        }.getOrNull()
-                        val text = bytes?.let { String(it, Charsets.UTF_8) } ?: bs.toString()
-                        logI("WS send(bin): " + text.take(1000))
-                    }
-                }
-            }
-        }.onFailure {
-            logI("ws dump hook fail: $it")
-        }
-    }
 
     private fun injectJs2PkBattle() {
         val loadUrl = loadUrl ?: return

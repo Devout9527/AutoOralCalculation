@@ -66,6 +66,16 @@
             android:inputType="number"
             android:hint="单位毫秒，默认值1500" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="净化">
+        <SwitchPreference
+            android:defaultValue="false"
+            android:key="@string/key_remove_ads"
+            android:title="去除广告" />
+        <SwitchPreference
+            android:defaultValue="false"
+            android:key="@string/key_no_nick_cooldown"
+            android:title="去除改名时间冷却" />
+    </PreferenceCategory>
     <PreferenceCategory android:title="Debug">
         <SwitchPreference
             android:key="@string/key_debug"

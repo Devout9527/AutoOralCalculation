@@ -27,6 +27,8 @@ class StringRes(resources: Resources) {
     val KEY_VERSION = resources.getString(R.string.key_version)
     val KEY_GOTO_SETTINGS = resources.getString(R.string.key_goto_settings)
     val KEY_DEBUG = resources.getString(R.string.key_debug)
+    val KEY_REMOVE_ADS = resources.getString(R.string.key_remove_ads)
+    val KEY_NO_NICK_COOLDOWN = resources.getString(R.string.key_no_nick_cooldown)
 }
 
 val moduleStringRes by lazy {

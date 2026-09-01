@@ -25,6 +25,7 @@ import cn.tinyhai.auto_oral_calculation.KEY_START_SETTINGS
 import cn.tinyhai.auto_oral_calculation.api.LegacyApiService
 import cn.tinyhai.auto_oral_calculation.api.OralApiService
 import cn.tinyhai.auto_oral_calculation.ui.SettingsDialog
+import cn.tinyhai.auto_oral_calculation.util.Clean
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import de.robv.android.xposed.XC_MethodHook.Unhook
@@ -42,6 +43,7 @@ class SettingHook : BaseHook() {
         hookSettingActivity()
         hookRouterActivity()
         hookHomeActivity()
+        hookRemoveAds()
     }
 
     private fun hookRouterActivity() {
@@ -53,17 +55,27 @@ class SettingHook : BaseHook() {
         }
     }
 
+    // 净化：隐藏/折叠广告横幅视图（FireworkBanner 等；只 GONE 不改测量，避免崩溃）
+    private fun hookRemoveAds() {
+        val adsOn = { runCatching { Clean.removeAds }.getOrDefault(false) }
+        val adViews = arrayOf(
+            "com.fenbi.android.firework.banner.FireworkBannerView",
+            "com.fenbi.android.leo.ui.firework.AutoShowFireworkBannerView",
+            "com.fenbi.android.leo.imgsearch.sdk.ui.LeoFireworkBannerView"
+        )
+        for (cn in adViews) {
+            runCatching {
+                val c = findClass(cn)
+                c.allMethod("onAttachedToWindow").after { param ->
+                    runCatching { if (adsOn()) { (param.thisObject as? View)?.visibility = View.GONE } }
+                }
+                logI("净化: 已hook去广告 $cn")
+            }.onFailure { logI(it) }
+        }
+    }
+
     private fun hookHomeActivity() {
         val homeActivityClass = findClass(Classname.HOME_ACTIVITY)
-        homeActivityClass.findMethod("onResume").after { param ->
-            if (shouldStartSettings) {
-                val context = param.thisObject as Context
-                val intent = Intent().apply {
-                    component = ComponentName(HOST_PACKAGE_NAME, Classname.SETTINGS_ACTIVITY)
-                }
-                context.startActivity(intent)
-            }
-        }
 
         val apiServiceCompanionClass = findClass("${Classname.ORAL_API_SERVICE}\$a")
         val legacyApiServiceCompanionClass = findClass("${Classname.LEGACY_API_SERVICE}\$a")

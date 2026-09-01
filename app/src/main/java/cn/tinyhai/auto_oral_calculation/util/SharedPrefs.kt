@@ -55,6 +55,11 @@ object PK {
         }
 }
 
+object Clean {
+    val removeAds get() = modulePrefs.getBoolean(moduleStringRes.KEY_REMOVE_ADS, false)
+    val noNickCooldown get() = modulePrefs.getBoolean(moduleStringRes.KEY_NO_NICK_COOLDOWN, false)
+}
+
 object Debug {
     val debug
         get() = modulePrefs.getBoolean(moduleStringRes.KEY_DEBUG, false)
