@@ -29,11 +29,16 @@ class RetrofitHook : BaseHook(), InvocationHandler {
         logI("addInterceptor")
         val interceptorClass = findClass(Classname.INTERCEPTOR)
         val callFactory = XposedHelpers.getObjectField(retrofit, "callFactory")
+        // okhttp 客户端字段在真机被混淆（eq.c#interceptors），改用 OkHttp 公开 getter 获取拦截器列表
         val client = XposedHelpers.getObjectField(callFactory, "a")
-        val interceptors = XposedHelpers.getObjectField(client, "interceptors") as List<*>
+        val interceptors = XposedHelpers.callMethod(client, "interceptors") as? MutableList<*>
         val myInterceptor =
             Proxy.newProxyInstance(interceptorClass.classLoader, arrayOf(interceptorClass), this)
-        XposedHelpers.setObjectField(client, "interceptors", (interceptors + myInterceptor).toList())
+        if (interceptors != null) {
+            @Suppress("UNCHECKED_CAST")
+            (interceptors as MutableList<Any>).add(myInterceptor)
+            logI("interceptor added, size=${interceptors.size}")
+        }
     }
 
     override fun invoke(proxy: Any?, method: Method, args: Array<out Any>?): Any? {

@@ -12,7 +12,7 @@ object Classname {
     const val SECTION_ITEM = "com.yuanfudao.android.leo.commonview.ui.LeoSectionItemCell"
 
     const val PRESENTER =
-        "com.fenbi.android.leo.exercise.math.quick.QuickExercisePresenter"
+        "com.fenbi.android.leo.exercise.math.quick.c"
 
     const val QUICK_EXERCISE_ACTIVITY = "com.fenbi.android.leo.exercise.math.quick.QuickExerciseActivity"
 

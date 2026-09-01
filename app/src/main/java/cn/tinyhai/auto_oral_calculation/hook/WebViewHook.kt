@@ -1,5 +1,6 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
+import android.app.Activity
 import android.app.AndroidAppHelper
 import android.net.Uri
 import android.os.Bundle
@@ -9,8 +10,10 @@ import android.webkit.JavascriptInterface
 import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.XposedInit.Companion.moduleRes
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
+import cn.tinyhai.auto_oral_calculation.hook.PracticeHook
 import cn.tinyhai.auto_oral_calculation.util.Debug
 import cn.tinyhai.auto_oral_calculation.util.PK
+import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.pathPoints
 import cn.tinyhai.auto_oral_calculation.util.toJSONArray
@@ -45,9 +48,17 @@ class WebViewHook : BaseHook() {
             .bufferedReader().use { it.readText() }
     }
 
+    // 新版(3.140+)普通口算练习走 H5：/bh5/leo-web-math-exercise/animation-oral.html
+    private val practiceJs by lazy {
+        moduleRes.assets.open("js/oral-practice.js")
+            .bufferedReader().use { it.readText() }
+    }
+
     private val pkPageLoaded = AtomicBoolean(false)
 
     private val resultPageLoaded = AtomicBoolean(false)
+
+    private val practicePageLoaded = AtomicBoolean(false)
 
     private val appropriateCostTime = AtomicLong(0L)
 
@@ -143,6 +154,24 @@ class WebViewHook : BaseHook() {
                     hookConsoleLog()
                     resultPageLoaded.set(true)
                 }
+
+                str.contains("/bh5/leo-web-math-exercise/animation-oral.html") -> {
+                    logI("oral practice page loaded")
+                    hookConsoleLog()
+                    practicePageLoaded.set(true)
+                    // 解析 keypointId / limit，触发自动上分（刷分循环）
+                    if (Practice.autoHonor) {
+                        val uri = Uri.parse(str)
+                        val keyPointId = uri.getQueryParameter("keypointId") ?: "0"
+                        val limit = uri.getQueryParameter("limit")?.toIntOrNull() ?: 10
+                        val ctx = (param.thisObject as? View)?.context
+                        runCatching {
+                            PracticeHook.triggerHonor(ctx as Activity, keyPointId, limit)
+                        }.onFailure {
+                            logI("triggerHonor fail: $it")
+                        }
+                    }
+                }
             }
         }
 
@@ -160,6 +189,10 @@ class WebViewHook : BaseHook() {
 
                     resultPageLoaded.compareAndSet(true, false) -> {
                         injectJs2ResultPage()
+                    }
+
+                    practicePageLoaded.compareAndSet(true, false) -> {
+                        injectJs2PracticePage()
                     }
                 }
             }
@@ -213,6 +246,23 @@ class WebViewHook : BaseHook() {
             if (PK.pkCyclic) {
                 injectJsCode(cyclicJs, loadUrl, webView)
             }
+        }
+    }
+
+    private fun injectJs2PracticePage() {
+        val loadUrl = loadUrl ?: return
+        val webView = webView ?: return
+        webView.post {
+            // 练习场自动答题：仅在开启时注入，按「极速/标准」配置间隔
+            if (!Practice.autoPractice) {
+                logI("练习自动答题未开启")
+                return@post
+            }
+            val quick = Practice.autoPracticeQuick
+            val interval = if (quick) 120 else 500
+            injectConfig(loadUrl, webView, "autoOral_quick", quick)
+            injectConfig(loadUrl, webView, "autoOral_interval", interval)
+            injectJsCode(practiceJs, loadUrl, webView)
         }
     }
 

@@ -1,5 +1,6 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
+import android.animation.Animator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
@@ -18,6 +19,7 @@ import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -31,11 +33,11 @@ import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import cn.tinyhai.auto_oral_calculation.util.strokes
 import cn.tinyhai.auto_oral_calculation.util.toJsonString
+import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
-import java.lang.reflect.ParameterizedType
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy
@@ -48,11 +50,20 @@ import kotlin.random.Random
 
 class PracticeHook : BaseHook() {
 
-    private class ExerciseGeneralModelWrapper(modelClass: Class<*>, exerciseTypeClass: Class<*>) {
-        private val getExerciseType: Method = modelClass.methods.first {
-            it.returnType == exerciseTypeClass && it.parameterCount == 0
-        }.also { it.isAccessible = true }
+    companion object {
+        @Volatile
+        private var hook: PracticeHook? = null
 
+        // 供 H5 练习页（WebViewHook）触发自动上分
+        fun triggerHonor(activity: Activity, keyPointId: String, limit: Int) {
+            hook?.startHonor(activity, keyPointId, limit)
+        }
+    }
+
+    private var honorHelper: HonorHelper? = null
+
+    private class ExerciseGeneralModelWrapper(modelClass: Class<*>) {
+        // 新版模型 cl.l：c(long,List)=buildUri, g(Context,Intent,Uri,int)=gotoResult
         private val buildUri: Method = modelClass.methods.first {
             it.returnType == Uri::class.java && it.parameterCount == 2
         }.also { it.isAccessible = true }
@@ -60,10 +71,6 @@ class PracticeHook : BaseHook() {
         private val gotoResult: Method = modelClass.methods.first {
             it.returnType == Void.TYPE && it.parameterCount > 1 && it.parameterTypes[0] == Context::class.java
         }.also { it.isAccessible = true }
-
-        fun Any.getExerciseType(): Any? {
-            return getExerciseType.invoke(this)
-        }
 
         fun Any.buildUri(costTime: Long, dataList: List<*>): Any? {
             return buildUri.invoke(this, costTime, dataList)
@@ -75,28 +82,28 @@ class PracticeHook : BaseHook() {
     }
 
     private class QuickExercisePresenterWrapper(presenterClass: Class<*>) {
-        private val startExercise: Method = presenterClass.declaredMethods.first { it.name == "c" }
-
-        private val getAnswers: Method = presenterClass.declaredMethods.first { it.name == "g" }
+        // 新版(3.140+) presenter 已混淆为 com.fenbi.android.leo.exercise.math.quick.c：
+        //   c()                    = 当前题正确答案列表 (rightAnswers)
+        //   f(String,List,Map)     = 提交识别结果（内部完成 setUserAnswer/isRight/刷新UI）
+        //   b(boolean,List)        = 下一题（内部完成 costTime/strokes/切题）
+        private val getAnswers: Method = presenterClass.declaredMethods.first {
+            it.name == "c" && it.parameterCount == 0
+        }
 
         private val commitAnswer: Method = presenterClass.declaredMethods.first {
-            it.name == "e" && it.parameterCount == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == List::class.java
+            it.name == "f" && it.parameterCount == 3
         }
 
         private val nextQuestion: Method = presenterClass.declaredMethods.first {
-            it.name == "d" && it.parameterCount == 2 && it.parameterTypes[0] == Boolean::class.javaPrimitiveType && it.parameterTypes[1] == List::class.java
-        }
-
-        fun Any.startExercise() {
-            startExercise.invoke(this)
+            it.name == "b" && it.parameterCount == 2 && it.parameterTypes[0] == Boolean::class.javaPrimitiveType
         }
 
         fun Any.getAnswers(): List<*>? {
             return getAnswers.invoke(this) as? List<*>
         }
 
-        fun Any.commitAnswer(answer: String) {
-            commitAnswer.invoke(this, answer, emptyList<Any>() /*wrongScript*/)
+        fun Any.commitAnswer(answer: String, strokes: List<Array<PointF>>) {
+            commitAnswer.invoke(this, answer, strokes, emptyMap<String, Any>())
         }
 
         fun Any.nextQuestion(autoJump: Boolean, strokes: List<Array<PointF>>) {
@@ -113,9 +120,32 @@ class PracticeHook : BaseHook() {
 
     private lateinit var presenterRef: WeakReference<Any>
 
+    private lateinit var presenterWrapper: QuickExercisePresenterWrapper
+
     private val presenter get() = presenterRef.get()
 
+    // 防止同一道题被多个触发点重复作答
+    private var lastAnsweredPos = -1
+
+    private val performNext = Runnable {
+        if (Practice.autoPractice) {
+            with(presenterWrapper) {
+                presenter?.run {
+                    val curPos = XposedHelpers.getIntField(this, "curPos")
+                    if (curPos == lastAnsweredPos) {
+                        return@run
+                    }
+                    val answer = getAnswers()?.firstOrNull()?.toString() ?: return@run
+                    lastAnsweredPos = curPos
+                    commitAnswer(answer, answer.strokes)
+                    nextQuestion(true, answer.strokes)
+                }
+            }
+        }
+    }
+
     override fun startHook() {
+        hook = this
         val quickExerciseActivityClass = findClass(Classname.QUICK_EXERCISE_ACTIVITY)
 
         hookQuickExerciseActivity(quickExerciseActivityClass)
@@ -129,78 +159,81 @@ class PracticeHook : BaseHook() {
 
     private fun hookQuickExercisePresenter(quickExerciseActivityClass: Class<*>) {
         val quickExercisePresenterClass = findClass(Classname.PRESENTER)
-        val presenterWrapper = QuickExercisePresenterWrapper(quickExercisePresenterClass)
-        val performNext = Runnable {
-            if (Practice.autoPractice) {
-                with(presenterWrapper) {
-                    presenter?.run {
-                        startExercise()
-                        val answer = getAnswers()?.get(0).toString()
-                        commitAnswer(answer)
-                        nextQuestion(true, answer.strokes.toList())
-                    }
+        presenterWrapper = QuickExercisePresenterWrapper(quickExercisePresenterClass)
+
+        // ready-go 动画结束（c$b.onAnimationEnd）→ 答第一题
+        findClass("${Classname.PRESENTER}\$b")
+            .findMethod("onAnimationEnd", Animator::class.java)
+            .after {
+                if (Practice.autoPractice) {
+                    mainHandler.post(performNext)
                 }
             }
-        }
-        // afterAnimation
-        quickExercisePresenterClass.findMethod("N").after {
-            if (Practice.autoPractice) {
-                mainHandler.post(performNext)
-            }
-        }
 
-        val modelClass =
-            (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments[1]
-        val getGeneralModel =
-            quickExerciseActivityClass.declaredMethods.first { it.returnType == modelClass && it.parameterCount == 0 }
-                .also { it.isAccessible = true }
-        val modelWrapper =
-            ExerciseGeneralModelWrapper(modelClass as Class<*>, findClass(Classname.EXERCISE_TYPE))
-        // afterLoadFinish
+        // 每题切题动画结束（QuickExerciseActivity$e.onAnimationEnd，原方法内已 N() 推进）→ 答下一题
+        findClass("${Classname.QUICK_EXERCISE_ACTIVITY}\$e")
+            .findMethod("onAnimationEnd", Animation::class.java)
+            .after {
+                if (Practice.autoPractice) {
+                    mainHandler.post(performNext)
+                }
+            }
+
+        // 题目加载完成（P(List)）→ 记录 presenter + 兜底触发
         quickExercisePresenterClass.declaredMethods.first {
             it.parameterCount == 1 && List::class.java.isAssignableFrom(it.parameterTypes[0])
         }.after { param ->
             presenterRef = WeakReference(param.thisObject)
+            lastAnsweredPos = -1
             if (!Practice.autoPractice) {
                 return@after
             }
             if (Practice.autoPracticeQuick) {
-                kotlin.runCatching {
-                    val v = XposedHelpers.getObjectField(param.thisObject, "a")
-                    val activity = XposedHelpers.callMethod(v, "getContext") as Activity
-                    val model = getGeneralModel.invoke(activity)
-                    val dataList = quickExercisePresenterClass.declaredFields.firstOrNull {
-                        List::class.java.isAssignableFrom(it.type)
-                    }?.get(param.thisObject) as List<*>
-                    var totalTime = 0
-                    dataList.subList(1, dataList.size - 1).forEach { data ->
-                        val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
-                        val answer = answers?.firstOrNull()?.toString() ?: ""
-                        XposedHelpers.callMethod(data, "setUserAnswer", answer)
-                        val costTime = Random.nextInt(150, 250)
-                        XposedHelpers.callMethod(data, "setCostTime", costTime)
-                        XposedHelpers.callMethod(data, "setStrokes", answer.strokes)
-                        totalTime += costTime
-                    }
-                    mainHandler.postDelayed({
-                        with(modelWrapper) {
-                            model?.run {
-                                val exerciseType = getExerciseType()
-                                val exerciseTypeInt =
-                                    XposedHelpers.getIntField(exerciseType, "exerciseType")
-                                val intent = activity.intent
-                                val uri = buildUri(totalTime.toLong(), dataList) as Uri
-                                gotoResult(activity, intent, uri, exerciseTypeInt)
-                                activity.finish()
-                            }
-                        }
-                    }, totalTime.toLong())
-                }.onFailure {
-                    logI(it)
-                }
+                quickFinishAll(param)
             } else {
-                mainHandler.post(performNext)
+                mainHandler.postDelayed(performNext, 800)
             }
+        }
+    }
+
+    private fun quickFinishAll(param: XC_MethodHook.MethodHookParam) {
+        kotlin.runCatching {
+            val presenter = param.thisObject
+            val presenterClass = presenter::class.java
+            val v = XposedHelpers.getObjectField(presenter, "a")
+            val activity = XposedHelpers.callMethod(v, "getContext") as Activity
+            val model = XposedHelpers.getObjectField(activity, "e")
+            val modelWrapper = ExerciseGeneralModelWrapper(model::class.java)
+            val dataList = presenterClass.declaredFields.firstOrNull {
+                List::class.java.isAssignableFrom(it.type)
+            }?.get(presenter) as List<*>
+            var totalTime = 0
+            dataList.subList(1, dataList.size - 1).forEach { data ->
+                val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
+                val answer = answers?.firstOrNull()?.toString() ?: ""
+                XposedHelpers.callMethod(data, "setUserAnswer", answer)
+                val costTime = Random.nextInt(150, 250)
+                XposedHelpers.callMethod(data, "setCostTime", costTime)
+                XposedHelpers.callMethod(data, "setStrokes", answer.strokes)
+                totalTime += costTime
+            }
+            val exerciseTypeInt = runCatching {
+                XposedHelpers.callMethod(
+                    XposedHelpers.callMethod(model, "getType"),
+                    "getExerciseType"
+                ) as Int
+            }.getOrDefault(0)
+            mainHandler.postDelayed({
+                with(modelWrapper) {
+                    model.run {
+                        val uri = buildUri(totalTime.toLong(), dataList) as Uri
+                        gotoResult(activity, activity.intent, uri, exerciseTypeInt)
+                        activity.finish()
+                    }
+                }
+            }, totalTime.toLong())
+        }.onFailure {
+            logI(it)
         }
     }
 
@@ -339,29 +372,47 @@ class PracticeHook : BaseHook() {
         }
     }
 
-    private fun hookQuickExerciseActivity(quickExerciseActivityClass: Class<*>) {
-        val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
-        val modelClass =
-            (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments.getOrNull(
-                1
-            )
-        val getGeneralModel =
-            quickExerciseActivityClass.declaredMethods.firstOrNull { it.returnType == modelClass && it.parameterCount == 0 }
-                ?.also { it.isAccessible = true }
-
-        var helper: HonorHelper? = null
-        quickExerciseActivityClass.findMethod("onCreate", Bundle::class.java).after { param ->
-            val activity = param.thisObject
+    // 供 H5 练习页触发自动上分：设置协程上下文 + 弹次数框 + 启动刷分循环
+    fun startHonor(activity: Activity, keyPointId: String, limit: Int) {
+        if (!Practice.autoHonor) return
+        try {
+            val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
             val scope =
                 XposedHelpers.callStaticMethod(lifecycleOwnerKtClass, "getLifecycleScope", activity)
             val coroutineContext = XposedHelpers.callMethod(scope, "getCoroutineContext")
-            val model = getGeneralModel?.invoke(activity) ?: return@after
-            val keyPointId = XposedHelpers.getIntField(model, "a").toString()
-            val limit = XposedHelpers.getIntField(model, "c")
+            OralApiService.setup(coroutineContext)
+        } catch (e: Throwable) {
+            logI("honor setup fail: $e")
+        }
+        showEditAlertDialog(activity) { targetCount ->
+            val onProgressChange = showProgressDialog(activity) {
+                honorHelper?.stopHonor()
+            }
+            honorHelper = HonorHelper(keyPointId, limit, targetCount, onProgressChange).also {
+                it.startHonor()
+            }
+        }
+    }
+
+    private fun hookQuickExerciseActivity(quickExerciseActivityClass: Class<*>) {
+        val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
+
+        var helper: HonorHelper? = null
+        quickExerciseActivityClass.findMethod("onCreate", Bundle::class.java).after { param ->
+            val activity = param.thisObject as Activity
+            val scope =
+                XposedHelpers.callStaticMethod(lifecycleOwnerKtClass, "getLifecycleScope", activity)
+            val coroutineContext = XposedHelpers.callMethod(scope, "getCoroutineContext")
 
             OralApiService.setup(coroutineContext)
             if (Practice.autoHonor) {
-//                testDelay(keyPointId, limit)
+                // 新版 keypointId 在 Intent 里，limit 从模型/Intent 兜底取
+                val keyPointId = activity.intent.getIntExtra("keypointId", -1).toString()
+                val limit = runCatching {
+                    XposedHelpers.getIntField(XposedHelpers.getObjectField(activity, "e"), "c")
+                }.getOrElse {
+                    activity.intent.getIntExtra("limit", 10)
+                }
                 showEditAlertDialog(activity as Context) { targetCount ->
                     val onProgressChange = showProgressDialog(activity) {
                         helper?.stopHonor()
@@ -414,22 +465,18 @@ class PracticeHook : BaseHook() {
         private val targetCount: Int = Int.MAX_VALUE,
         private val onProgress: (Int, Int) -> Unit
     ) {
-        private val lock = ReentrantLock()
+        // 多线程并发上分：N 个 worker 各自拉题+提交，共享目标计数
+        private val successCount = java.util.concurrent.atomic.AtomicInteger(0)
+        private val pendingCount = java.util.concurrent.atomic.AtomicInteger(0)
+        @Volatile private var active: Boolean = true
+        private val workers = mutableListOf<Thread>()
 
-        private val getExamInfoCondition = lock.newCondition()
-
-        private var pendingCount: Int = 0
-
-        private var successCount: Int = 0
-
-        @Volatile
-        private var active: Boolean = true
-
-        private var workerThread: Thread? = null
+        // 并发线程数（可在代码里调整，建议 2~5，视服务器承受力）
+        private val honorThreadCount = 3
 
         fun stopHonor() {
             active = false
-            workerThread?.interrupt()
+            workers.forEach { it.interrupt() }
         }
 
         fun startHonor() {
@@ -437,63 +484,38 @@ class PracticeHook : BaseHook() {
                 stopHonor()
                 return
             }
-            workerThread = thread {
-                doWork()
+            repeat(honorThreadCount.coerceAtLeast(1)) { i ->
+                val t = thread(name = "auto-honor-$i") {
+                    work()
+                }
+                workers.add(t)
             }
         }
 
-        private fun doWork() {
-            var lastReqTime: Long
-            var waitTime = 5000L
-            var reqSuccessCount = 0
+        private fun work() {
             while (active && !Thread.interrupted()) {
-                try {
-                    lock.withLock {
-                        logI("pendingCount: $pendingCount, successCount: $successCount")
-                        while (pendingCount >= 0 && successCount + pendingCount >= targetCount) {
-                            getExamInfoCondition.await()
-                            if (successCount >= targetCount) {
-                                stopHonor()
-                                return@withLock
-                            } else {
-                                continue
-                            }
-                        }
-
-                        pendingCount += 1
-
-                        lastReqTime = SystemClock.elapsedRealtime()
-                        OralApiService.getExamInfo(keyPointId, limit) { result ->
-                            lock.withLock {
-                                result.onSuccess {
-                                    logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
-                                    handleExamVO(it)
-                                    reqSuccessCount += 1
-                                    if (reqSuccessCount >= 10) {
-                                        waitTime = waitTime.minus(1000).coerceAtLeast(2033)
-                                        logI("waitTime decrease to $waitTime")
-                                        reqSuccessCount = 0
-                                    }
-                                }.onFailure {
-                                    pendingCount -= 1
-                                    if (it !is CancellationException) {
-                                        reqSuccessCount = 0
-                                        waitTime += 1000
-                                        logI("waitTime increase to $waitTime")
-                                        logI("get exam failed: ${it.message}")
-                                    }
-                                    getExamInfoCondition.signalAll()
-                                }
-                            }
-                        }
-                        getExamInfoCondition.await(waitTime, TimeUnit.MILLISECONDS)
-                        val elapsed = SystemClock.elapsedRealtime() - lastReqTime
-                        if (elapsed < waitTime) {
-                            getExamInfoCondition.await(waitTime - elapsed, TimeUnit.MILLISECONDS)
+                if (successCount.get() >= targetCount) {
+                    break
+                }
+                // 控制待处理数量，避免过多在途请求
+                if (pendingCount.get() >= honorThreadCount * 2) {
+                    Thread.sleep(500)
+                    continue
+                }
+                pendingCount.incrementAndGet()
+                OralApiService.getExamInfo(keyPointId, limit) { result ->
+                    result.onSuccess {
+                        logI("get exam elapsed success")
+                        handleExamVO(it)
+                    }.onFailure {
+                        pendingCount.decrementAndGet()
+                        if (it !is CancellationException) {
+                            logI("get exam failed: ${it.message}")
                         }
                     }
-                } catch (_: InterruptedException) {
                 }
+                // 每线程请求间隔
+                Thread.sleep(1000)
             }
         }
 
@@ -536,18 +558,15 @@ class PracticeHook : BaseHook() {
             val runnable = Runnable {
                 OralApiService.uploadExamResult(examId, examVO) {
                     val elapsed = SystemClock.elapsedRealtime() - uploadReqTime
-                    lock.withLock {
-                        pendingCount -= 1
-                        getExamInfoCondition.signalAll()
-                        it.onFailure {
-                            if (it !is CancellationException) {
-                                logI("upload exam failed: ${it.message}")
-                            }
-                        }.onSuccess {
-                            successCount += 1
-                            logI("upload exam elapsed: $elapsed")
-                            onProgress(successCount, targetCount)
+                    pendingCount.decrementAndGet()
+                    it.onFailure {
+                        if (it !is CancellationException) {
+                            logI("upload exam failed: ${it.message}")
                         }
+                    }.onSuccess {
+                        successCount.incrementAndGet()
+                        logI("upload exam elapsed: $elapsed, success=${successCount.get()}")
+                        onProgress(successCount.get(), targetCount)
                     }
                 }
             }

@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
+import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -90,7 +91,9 @@ class SettingHook : BaseHook() {
         val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
         val settingsActivityClass = findClass(Classname.SETTINGS_ACTIVITY)
         val sectionItemClass = findClass(Classname.SECTION_ITEM)
-        val sectionItemConstructor = sectionItemClass.getConstructor(Context::class.java)
+        // 新版 LeoSectionItemCell 已无 (Context) 构造器，只剩 (Context, AttributeSet) / (Context, AttributeSet, int)
+        val sectionItemConstructor =
+            sectionItemClass.getConstructor(Context::class.java, AttributeSet::class.java)
         settingsActivityClass.findMethod("onCreate", Bundle::class.java).after { param ->
             val activity = param.thisObject as Activity
             val scope =
@@ -115,8 +118,11 @@ class SettingHook : BaseHook() {
             "id",
             activity.packageName
         )
-        val appWidget = activity.findViewById<View>(appWidgetId)
-        val container = appWidget.parent as LinearLayout
+        val appWidget = activity.findViewById<View>(appWidgetId) ?: return
+        // 新版设置页结构变化，cell 的父级未必直接是 LinearLayout，向上找最近的 LinearLayout
+        val container = findParentLinearLayout(appWidget)
+            ?: (appWidget.parent as? LinearLayout)
+            ?: return
         val labelId =
             activity.resources.getIdentifier("text_label", "id", activity.packageName)
 
@@ -127,12 +133,21 @@ class SettingHook : BaseHook() {
         container.addView(moduleSectionItem, 0)
     }
 
+    private fun findParentLinearLayout(view: View): LinearLayout? {
+        var p: android.view.ViewParent? = view.parent
+        while (p != null) {
+            if (p is LinearLayout) return p
+            p = (p as? View)?.parent
+        }
+        return null
+    }
+
     private fun buildModuleSectionItem(
         activity: Activity,
         itemConstructor: Constructor<*>,
         labelId: Int
     ): View {
-        val item = itemConstructor.newInstance(activity) as View
+        val item = itemConstructor.newInstance(activity, null) as View
         return buildSectionItem(item, labelId, "口算糕手设置") {
             SettingsDialog(activity).show()
         }
@@ -145,7 +160,15 @@ class SettingHook : BaseHook() {
         onClick: (() -> Unit)? = null
     ): View {
         val labelTv = item.findViewById<TextView>(labelId)
-        labelTv.text = label
+        if (labelTv != null) {
+            labelTv.text = label
+        } else {
+            // 新版 LeoSectionItemCell 文本控件另有其名，用 setLableText(String) 兜底
+            runCatching {
+                item::class.java.getMethod("setLableText", String::class.java)
+                    .invoke(item, label)
+            }.onFailure { logI(it) }
+        }
         item.layoutParams = LayoutParams(
             LayoutParams.MATCH_PARENT,
             LayoutParams.WRAP_CONTENT
@@ -161,7 +184,7 @@ class SettingHook : BaseHook() {
         itemConstructor: Constructor<*>,
         labelId: Int
     ): View {
-        val item = itemConstructor.newInstance(activity) as View
+        val item = itemConstructor.newInstance(activity, null) as View
         return buildSectionItem(item, labelId, "自定义分数") {
             showCustomScoreDialog(activity)
         }
