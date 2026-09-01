@@ -48,17 +48,9 @@ class WebViewHook : BaseHook() {
             .bufferedReader().use { it.readText() }
     }
 
-    // 新版(3.140+)普通口算练习走 H5：/bh5/leo-web-math-exercise/animation-oral.html
-    private val practiceJs by lazy {
-        moduleRes.assets.open("js/oral-practice.js")
-            .bufferedReader().use { it.readText() }
-    }
-
     private val pkPageLoaded = AtomicBoolean(false)
 
     private val resultPageLoaded = AtomicBoolean(false)
-
-    private val practicePageLoaded = AtomicBoolean(false)
 
     private val appropriateCostTime = AtomicLong(0L)
 
@@ -158,7 +150,6 @@ class WebViewHook : BaseHook() {
                 str.contains("/bh5/leo-web-math-exercise/animation-oral.html") -> {
                     logI("oral practice page loaded")
                     hookConsoleLog()
-                    practicePageLoaded.set(true)
                     // 解析 keypointId / limit，触发自动上分（刷分循环）
                     if (Practice.autoHonor) {
                         val uri = Uri.parse(str)
@@ -189,10 +180,6 @@ class WebViewHook : BaseHook() {
 
                     resultPageLoaded.compareAndSet(true, false) -> {
                         injectJs2ResultPage()
-                    }
-
-                    practicePageLoaded.compareAndSet(true, false) -> {
-                        injectJs2PracticePage()
                     }
                 }
             }
@@ -246,21 +233,6 @@ class WebViewHook : BaseHook() {
             if (PK.pkCyclic) {
                 injectJsCode(cyclicJs, loadUrl, webView)
             }
-        }
-    }
-
-    private fun injectJs2PracticePage() {
-        val loadUrl = loadUrl ?: return
-        val webView = webView ?: return
-        webView.post {
-            // 练习场自动答题：仅在开启时注入（极速/循环已移除，统一标准间隔）
-            if (!Practice.autoPractice) {
-                logI("练习自动答题未开启")
-                return@post
-            }
-            injectConfig(loadUrl, webView, "autoOral_quick", false)
-            injectConfig(loadUrl, webView, "autoOral_interval", 500)
-            injectJsCode(practiceJs, loadUrl, webView)
         }
     }
 

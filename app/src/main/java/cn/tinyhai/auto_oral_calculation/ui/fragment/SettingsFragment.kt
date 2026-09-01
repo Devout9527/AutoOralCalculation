@@ -22,8 +22,6 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
             manager.findPreference(stringRes.KEY_ALWAYS_TRUE_ANSWER) as SwitchPreference
         val doubleNicknameLength: SwitchPreference = manager.findPreference(stringRes.KEY_DOUBLE_NICKNAME_LENGTH) as SwitchPreference
         val autoHonor: SwitchPreference = manager.findPreference(stringRes.KEY_AUTO_HONOR) as SwitchPreference
-        val autoPractice: SwitchPreference =
-            manager.findPreference(stringRes.KEY_AUTO_PRACTICE) as SwitchPreference
         val autoAnswerConfig: ListPreference =
             manager.findPreference(stringRes.KEY_AUTO_ANSWER_CONFIG) as ListPreference
         val customAnswerConfig: EditTextPreference =

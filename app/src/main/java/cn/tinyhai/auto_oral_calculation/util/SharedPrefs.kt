@@ -19,11 +19,6 @@ object Common {
 
 object Practice {
     val autoHonor get() = modulePrefs.getBoolean(moduleStringRes.KEY_AUTO_HONOR, false)
-    val autoPractice
-        get() = !autoHonor && modulePrefs.getBoolean(
-            moduleStringRes.KEY_AUTO_PRACTICE,
-            true
-        )
 }
 
 object PK {

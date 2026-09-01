@@ -1,6 +1,5 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
-import android.animation.Animator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
@@ -19,7 +18,6 @@ import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -62,35 +60,6 @@ class PracticeHook : BaseHook() {
 
     private var honorHelper: HonorHelper? = null
 
-    private class QuickExercisePresenterWrapper(presenterClass: Class<*>) {
-        // 新版(3.140+) presenter 已混淆为 com.fenbi.android.leo.exercise.math.quick.c：
-        //   c()                    = 当前题正确答案列表 (rightAnswers)
-        //   f(String,List,Map)     = 提交识别结果（内部完成 setUserAnswer/isRight/刷新UI）
-        //   b(boolean,List)        = 下一题（内部完成 costTime/strokes/切题）
-        private val getAnswers: Method = presenterClass.declaredMethods.first {
-            it.name == "c" && it.parameterCount == 0
-        }
-
-        private val commitAnswer: Method = presenterClass.declaredMethods.first {
-            it.name == "f" && it.parameterCount == 3
-        }
-
-        private val nextQuestion: Method = presenterClass.declaredMethods.first {
-            it.name == "b" && it.parameterCount == 2 && it.parameterTypes[0] == Boolean::class.javaPrimitiveType
-        }
-
-        fun Any.getAnswers(): List<*>? {
-            return getAnswers.invoke(this) as? List<*>
-        }
-
-        fun Any.commitAnswer(answer: String, strokes: List<Array<PointF>>) {
-            commitAnswer.invoke(this, answer, strokes, emptyMap<String, Any>())
-        }
-
-        fun Any.nextQuestion(autoJump: Boolean, strokes: List<Array<PointF>>) {
-            nextQuestion.invoke(this, autoJump, strokes)
-        }
-    }
 
     override val name: String
         get() = "PracticeHook"
@@ -99,77 +68,15 @@ class PracticeHook : BaseHook() {
         ScheduledThreadPoolExecutor(5, DiscardPolicy())
     }
 
-    private lateinit var presenterRef: WeakReference<Any>
-
-    private lateinit var presenterWrapper: QuickExercisePresenterWrapper
-
-    private val presenter get() = presenterRef.get()
-
-    // 防止同一道题被多个触发点重复作答
-    private var lastAnsweredPos = -1
-
-    private val performNext = Runnable {
-        if (Practice.autoPractice) {
-            with(presenterWrapper) {
-                presenter?.run {
-                    val curPos = XposedHelpers.getIntField(this, "curPos")
-                    if (curPos == lastAnsweredPos) {
-                        return@run
-                    }
-                    val answer = getAnswers()?.firstOrNull()?.toString() ?: return@run
-                    lastAnsweredPos = curPos
-                    commitAnswer(answer, answer.strokes)
-                    nextQuestion(true, answer.strokes)
-                }
-            }
-        }
-    }
-
     override fun startHook() {
         hook = this
         val quickExerciseActivityClass = findClass(Classname.QUICK_EXERCISE_ACTIVITY)
 
         hookQuickExerciseActivity(quickExerciseActivityClass)
 
-        hookQuickExercisePresenter(quickExerciseActivityClass)
-
         hookCountDownTimer()
     }
 
-    private fun hookQuickExercisePresenter(quickExerciseActivityClass: Class<*>) {
-        val quickExercisePresenterClass = findClass(Classname.PRESENTER)
-        presenterWrapper = QuickExercisePresenterWrapper(quickExercisePresenterClass)
-
-        // ready-go 动画结束（c$b.onAnimationEnd）→ 答第一题
-        findClass("${Classname.PRESENTER}\$b")
-            .findMethod("onAnimationEnd", Animator::class.java)
-            .after {
-                if (Practice.autoPractice) {
-                    mainHandler.post(performNext)
-                }
-            }
-
-        // 每题切题动画结束（QuickExerciseActivity$e.onAnimationEnd，原方法内已 N() 推进）→ 答下一题
-        findClass("${Classname.QUICK_EXERCISE_ACTIVITY}\$e")
-            .findMethod("onAnimationEnd", Animation::class.java)
-            .after {
-                if (Practice.autoPractice) {
-                    mainHandler.post(performNext)
-                }
-            }
-
-        // 题目加载完成（P(List)）→ 记录 presenter + 兜底触发
-        quickExercisePresenterClass.declaredMethods.first {
-            it.parameterCount == 1 && List::class.java.isAssignableFrom(it.parameterTypes[0])
-        }.after { param ->
-            presenterRef = WeakReference(param.thisObject)
-            lastAnsweredPos = -1
-            if (!Practice.autoPractice) {
-                return@after
-            }
-            mainHandler.postDelayed(performNext, 800)
-        }
-    }
 
     private fun hookCountDownTimer() {
         val countDownTimerClass = CountDownTimer::class.java
