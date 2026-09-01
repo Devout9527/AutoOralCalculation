@@ -1,16 +1,22 @@
 # AutoOralCalculation
-一款为小猿口算量身定制的Xposed模块
+一款为小猿口算（小猿AI）量身定制的 Xposed 模块
 
-### 功能
+## 原作者 / 版权声明
+本项目基于 **TinyHai** 的 [AutoOralCalculation](https://github.com/TinyHai/AutoOralCalculation) 二次开发适配而来。
+
+- 原始仓库：`https://github.com/TinyHai/AutoOralCalculation`
+- 原作者：**TinyHai**
+- 前期核心功能（识别/练习/PK/刷分等）的实现与版权均归属原仓库作者 TinyHai，在此深表感谢。
+
+> 本仓库为适配 **小猿AI / 小猿口算 3.140+** 的 fork：
+> 新增了 **H5 练习自动答题、练习页触发自动上分、设置入口适配、识别/自动练习 hook 重构** 等改动。
+
+## 功能
 - 口算练习自动答题
-- <del>口算练习秒结算<del>
-- 口算练习循环练习<del>（可以和秒结算一起开）</del>
 - 口算练习刷分（可自定义次数）
 - 识别结果永远为正确答案
-- 口算PK自动答题
-- <del>口算PK开局秒结算 (显示为0秒</del>）
-- 口算PK循环PK
-- 自定义答题脚本功能（有前端开发经验应该可以自己定义答题逻辑）
+- 口算 PK 自动答题
+- 自定义答题脚本功能（有前端开发经验可自定义答题逻辑）
 
-### 演示视频
+## 演示视频
 [传送门](https://www.bilibili.com/video/BV14tCUYcESM/?vd_source=6d1b1cd7a08cab7216c6e020fa240e30)
