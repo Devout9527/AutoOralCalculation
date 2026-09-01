@@ -8,7 +8,7 @@ class RecognizerHook : BaseHook() {
         get() = "RecognizerHook"
 
     override fun startHook() {
-        // 新版(3.140+) MathScriptRecognizer 被混淆为 ar.d。ScriptBoard 的字段名也被混淆（无 recognizer），
+        // 新版(3.140.1) MathScriptRecognizer 被混淆为 ar.d。ScriptBoard 的字段名也被混淆（无 recognizer），
         // 因此通过「类型里含 a(int, List, List) 方法」动态定位识别器类，避免硬编码变量/类名
         val scriptBoardClass = findClass("com.fenbi.android.leo.exercise.view.ScriptBoard")
         val mathScriptRecognizerClass = scriptBoardClass.declaredFields
