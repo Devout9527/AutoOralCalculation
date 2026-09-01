@@ -11,6 +11,7 @@ import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.XposedInit.Companion.moduleRes
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
 import cn.tinyhai.auto_oral_calculation.hook.PracticeHook
+import cn.tinyhai.auto_oral_calculation.util.Common
 import cn.tinyhai.auto_oral_calculation.util.Debug
 import cn.tinyhai.auto_oral_calculation.util.PK
 import cn.tinyhai.auto_oral_calculation.util.Practice
@@ -48,6 +49,13 @@ class WebViewHook : BaseHook() {
             .bufferedReader().use { it.readText() }
     }
 
+    // 诗词PK / 单词PK 实时自动答题
+    private val pkBattleJs by lazy {
+        moduleRes.assets.open("js/pk-battle.js")
+            .bufferedReader().use { it.readText() }
+    }
+
+    private val pkBattlePageLoaded = AtomicBoolean(false)
     private val pkPageLoaded = AtomicBoolean(false)
 
     private val resultPageLoaded = AtomicBoolean(false)
@@ -127,16 +135,31 @@ class WebViewHook : BaseHook() {
 
         loadUrl?.after { param ->
             val str = param.args[0].toString()
+            logI("loadUrl: " + str.take(160))
             when {
                 str.startsWith("javascript:") -> return@after
-                str.contains("/bh5/leo-web-oral-pk/exercise.html") -> {
-                    logI("exercise.html loaded")
+                str.contains("/bh5/leo-web-poem-pk/exercise.html") -> {
+                    logI("poetry pk page loaded")
                     hookConsoleLog()
-                    pkPageLoaded.set(true)
+                    if (PK.pkWin) {
+                        pkBattlePageLoaded.set(true)
+                    } else {
+                        logI("诗词PK自动答题未开启")
+                    }
                 }
 
-                str.contains("/bh5/leo-web-oral-pk/english-words.html") -> {
-                    logI("english-words.html loaded")
+                str.contains("/bh5/leo-web-oral-pk/english-word-match.html") -> {
+                    logI("word pk page loaded")
+                    hookConsoleLog()
+                    if (PK.pkWin) {
+                        pkBattlePageLoaded.set(true)
+                    } else {
+                        logI("单词PK自动答题未开启")
+                    }
+                }
+
+                str.contains("/bh5/leo-web-oral-pk/exercise.html") -> {
+                    logI("exercise.html loaded")
                     hookConsoleLog()
                     pkPageLoaded.set(true)
                 }
@@ -167,6 +190,8 @@ class WebViewHook : BaseHook() {
         }
 
         hookJsLoadComplete()
+
+        hookWebSocketDump()
     }
 
     private fun hookJsLoadComplete() {
@@ -180,6 +205,10 @@ class WebViewHook : BaseHook() {
 
                     resultPageLoaded.compareAndSet(true, false) -> {
                         injectJs2ResultPage()
+                    }
+
+                    pkBattlePageLoaded.compareAndSet(true, false) -> {
+                        injectJs2PkBattle()
                     }
                 }
             }
@@ -233,6 +262,52 @@ class WebViewHook : BaseHook() {
             if (PK.pkCyclic) {
                 injectJsCode(cyclicJs, loadUrl, webView)
             }
+        }
+    }
+
+    // 抓取 PK 对战 WebSocket 发出的消息（Debug 开启时），用于分析诗词/单词PK 协议
+    private fun hookWebSocketDump() {
+        // 注意：不要在此处读 Debug.debug / modulePrefs —— startHook 时 currentApplication() 为 null 会崩。
+        // 改为在回调查询时再判断（此时 App 已运行）。
+        fun debugOn(): Boolean = runCatching {
+            android.app.AndroidAppHelper.currentApplication() != null && Debug.debug
+        }.getOrDefault(false)
+        runCatching {
+            val realWs = findClass("okhttp3.internal.ws.RealWebSocket")
+            // 文本帧
+            runCatching {
+                realWs.findMethod("send", String::class.java).before { param ->
+                    if (!debugOn()) return@before
+                    val msg = param.args[0] as? String ?: return@before
+                    logI("WS send(text): " + msg.take(1000))
+                }
+            }
+            // 二进制帧 (okio ByteString)
+            runCatching {
+                val byteStringClass = findClass("okio.ByteString")
+                realWs.findMethod("send", byteStringClass).before { param ->
+                    if (!debugOn()) return@before
+                    val bs = param.args[0]
+                    if (bs != null) {
+                        val bytes = runCatching {
+                            (bs::class.java.getMethod("toByteArray")).invoke(bs) as ByteArray
+                        }.getOrNull()
+                        val text = bytes?.let { String(it, Charsets.UTF_8) } ?: bs.toString()
+                        logI("WS send(bin): " + text.take(1000))
+                    }
+                }
+            }
+        }.onFailure {
+            logI("ws dump hook fail: $it")
+        }
+    }
+
+    private fun injectJs2PkBattle() {
+        val loadUrl = loadUrl ?: return
+        val webView = webView ?: return
+        webView.post {
+            injectConfig(loadUrl, webView, "autoOralAlwaysTrue", Common.alwaysTrue)
+            injectJsCode(pkBattleJs, loadUrl, webView)
         }
     }
 
@@ -318,13 +393,30 @@ class WebViewHook : BaseHook() {
     private fun hookDataEncrypt(caller: Class<*>) {
         caller.allMethod("call").before { param ->
             val mode = PK.mode
-            if (!Debug.debug && mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
+            val alwaysTrue = Common.alwaysTrue
+            val doPk = mode in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)
+            // 无差别正确(一切输入视为正确答案) 或 口算PK自动答题 任一开启才处理
+            if (!alwaysTrue && !doPk) {
                 return@before
             }
             val bean = param.args[0]
             val base64 = XposedHelpers.getObjectField(bean, "base64").toString()
             if (base64.isBlank()) {
                 return@before
+            }
+            // Debug：把所有 DataEncrypt 载荷原样转储（口算/诗词/单词PK 提交都可抓到）
+            if (Debug.debug) {
+                val raw = kotlin.runCatching { Base64.decode(base64, 0).decodeToString() }.getOrElse { base64 }
+                thread {
+                    kotlin.runCatching {
+                        val f = File(
+                            AndroidAppHelper.currentApplication().externalCacheDir,
+                            "${System.currentTimeMillis()}.json"
+                        )
+                        f.writeText(raw)
+                        logI("dump payload -> ${f.absolutePath} (${raw.length} chars)")
+                    }
+                }
             }
             val json =
                 kotlin.runCatching { JSONObject(Base64.decode(base64, 0).decodeToString()) }
@@ -333,23 +425,40 @@ class WebViewHook : BaseHook() {
             if (!json.has("pkIdStr")) {
                 return@before
             }
-            if (mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
-                return@before
-            }
             runCatching {
                 val questions = json.getJSONArray("questions")
                 for (i in 0 until questions.length()) {
                     val question = questions.getJSONObject(i)
-                    val answer = question.getString("userAnswer") ?: ""
-                    val pathPoints = answer.pathPoints.toJSONArray()
-                    val curTrueAnswer = question.optJSONObject("curTrueAnswer")
-                    curTrueAnswer?.put("pathPoints", pathPoints)
-                    if (question.has("script")) {
-                        question.put("script", pathPoints.toString())
+                    // 无差别正确：发包前把用户答案改为正确答案（诗词/单词/口算通用）
+                    if (alwaysTrue) {
+                        // 诗词PK格式：selfAnswer/correctAnswer
+                        if (question.has("correctAnswer")) {
+                            val correct = question.getString("correctAnswer")
+                            question.put("selfAnswer", correct)
+                            if (question.has("userAnswer")) question.put("userAnswer", correct)
+                            if (question.has("answer")) question.put("answer", correct)
+                        }
+                        // 单词PK格式：每题 correct 布尔
+                        if (question.has("correct")) {
+                            question.put("correct", true)
+                        }
+                    }
+                    // 口算PK 原有重写（容错：用 optString 避免无 userAnswer 的题抛异常）
+                    if (doPk && question.has("userAnswer")) {
+                        val answer = question.optString("userAnswer")
+                        val pathPoints = answer.pathPoints.toJSONArray()
+                        val curTrueAnswer = question.optJSONObject("curTrueAnswer")
+                        curTrueAnswer?.put("pathPoints", pathPoints)
+                        if (question.has("script")) {
+                            question.put("script", pathPoints.toString())
+                        }
                     }
                 }
-                val questionCnt = json.getInt("questionCnt")
-                if (mode == AutoAnswerMode.QUICK) {
+                val questionCnt = json.optInt("questionCnt")
+                if (alwaysTrue) {
+                    json.put("correctCnt", questionCnt)
+                }
+                if (doPk && mode == AutoAnswerMode.QUICK) {
                     val appropriateCostTime = appropriateCostTime.get()
                     val costTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
                         appropriateCostTime
@@ -361,11 +470,14 @@ class WebViewHook : BaseHook() {
                 }
                 if (Debug.debug) {
                     thread {
-                        val file = File(
-                            AndroidAppHelper.currentApplication().externalCacheDir,
-                            "${System.currentTimeMillis()}.json"
-                        )
-                        file.writeText(json.toString())
+                        kotlin.runCatching {
+                            val file = File(
+                                AndroidAppHelper.currentApplication().externalCacheDir,
+                                "${System.currentTimeMillis()}.json"
+                            )
+                            file.writeText(json.toString())
+                            logI("dump rewritten -> ${file.absolutePath}")
+                        }
                     }
                 }
                 val newBase64 = Base64.encode(json.toString().toByteArray(), 0).decodeToString()

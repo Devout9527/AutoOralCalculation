@@ -3,9 +3,9 @@
     <PreferenceCategory android:title="通用">
         <SwitchPreference
             android:defaultValue="true"
-            android:key="@string/key_always_true_answer"
+            android:key="@string/key_always_true_oral"
             android:summary="手写输入识别结果永远为正确答案"
-            android:title="一切输入视为正确答案" />
+            android:title="一切输入视为正确答案(口算/手写)" />
         <SwitchPreference
             android:defaultValue="true"
             android:key="@string/key_double_nickname_length"
@@ -25,6 +25,11 @@
             android:summary="进入任意口算练习页面挂机即可"/>
     </PreferenceCategory>
     <PreferenceCategory android:title="PK">
+        <SwitchPreference
+            android:defaultValue="false"
+            android:key="@string/key_pk_win"
+            android:title="PK包赢"
+            android:summary="诗词PK/单词PK 自动答题，稳赢" />
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="请选择"

@@ -12,7 +12,8 @@ private val modulePrefs by lazy {
 }
 
 object Common {
-    val alwaysTrue get() = modulePrefs.getBoolean(moduleStringRes.KEY_ALWAYS_TRUE_ANSWER, true)
+    // 一切输入视为正确答案(口算/手写识别)
+    val alwaysTrue get() = modulePrefs.getBoolean(moduleStringRes.KEY_ALWAYS_TRUE_ORAL, true)
     val doubleNicknameLength get() = modulePrefs.getBoolean(moduleStringRes.KEY_DOUBLE_NICKNAME_LENGTH, true)
     val removeRestrictionOnNickname get() = modulePrefs.getBoolean(moduleStringRes.KEY_REMOVE_RESTRICTION_ON_NICKNAME, false)
 }
@@ -22,6 +23,7 @@ object Practice {
 }
 
 object PK {
+    val pkWin get() = modulePrefs.getBoolean(moduleStringRes.KEY_PK_WIN, false)
     val mode: AutoAnswerMode
         get() {
             val index = runCatching {

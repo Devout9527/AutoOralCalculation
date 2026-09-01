@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">口算糕手</string>
     <string name="key_always_true_answer">always_true_answer</string>
+    <string name="key_always_true_oral">always_true_oral</string>
     <string name="key_auto_honor">auto_honor</string>
     <string name="key_auto_practice">auto_practice</string>
     <string name="key_auto_practice_quick">auto_practice_quick</string>
@@ -12,6 +13,9 @@
     <string name="key_quick_mode_interval">quick_mode_interval</string>
     <string name="key_pk_cyclic">pk_cyclic</string>
     <string name="key_pk_cyclic_interval">pk_cyclic_interval</string>
+    <string name="key_pk_poetry_answer">pk_poetry_answer</string>
+    <string name="key_pk_word_answer">pk_word_answer</string>
+    <string name="key_pk_win">pk_win</string>
     <string name="key_github">github</string>
     <string name="key_version">version</string>
     <string name="key_goto_settings">goto_settings</string>
