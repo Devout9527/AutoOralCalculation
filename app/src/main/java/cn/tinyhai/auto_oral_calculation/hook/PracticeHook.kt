@@ -62,25 +62,6 @@ class PracticeHook : BaseHook() {
 
     private var honorHelper: HonorHelper? = null
 
-    private class ExerciseGeneralModelWrapper(modelClass: Class<*>) {
-        // 新版模型 cl.l：c(long,List)=buildUri, g(Context,Intent,Uri,int)=gotoResult
-        private val buildUri: Method = modelClass.methods.first {
-            it.returnType == Uri::class.java && it.parameterCount == 2
-        }.also { it.isAccessible = true }
-
-        private val gotoResult: Method = modelClass.methods.first {
-            it.returnType == Void.TYPE && it.parameterCount > 1 && it.parameterTypes[0] == Context::class.java
-        }.also { it.isAccessible = true }
-
-        fun Any.buildUri(costTime: Long, dataList: List<*>): Any? {
-            return buildUri.invoke(this, costTime, dataList)
-        }
-
-        fun Any.gotoResult(context: Context, intent: Intent, uri: Uri, exerciseType: Int) {
-            gotoResult.invoke(this, context, intent, uri, exerciseType)
-        }
-    }
-
     private class QuickExercisePresenterWrapper(presenterClass: Class<*>) {
         // 新版(3.140+) presenter 已混淆为 com.fenbi.android.leo.exercise.math.quick.c：
         //   c()                    = 当前题正确答案列表 (rightAnswers)
@@ -153,8 +134,6 @@ class PracticeHook : BaseHook() {
         hookQuickExercisePresenter(quickExerciseActivityClass)
 
         hookCountDownTimer()
-
-        hookSimpleWebActivityCompanion()
     }
 
     private fun hookQuickExercisePresenter(quickExerciseActivityClass: Class<*>) {
@@ -188,52 +167,7 @@ class PracticeHook : BaseHook() {
             if (!Practice.autoPractice) {
                 return@after
             }
-            if (Practice.autoPracticeQuick) {
-                quickFinishAll(param)
-            } else {
-                mainHandler.postDelayed(performNext, 800)
-            }
-        }
-    }
-
-    private fun quickFinishAll(param: XC_MethodHook.MethodHookParam) {
-        kotlin.runCatching {
-            val presenter = param.thisObject
-            val presenterClass = presenter::class.java
-            val v = XposedHelpers.getObjectField(presenter, "a")
-            val activity = XposedHelpers.callMethod(v, "getContext") as Activity
-            val model = XposedHelpers.getObjectField(activity, "e")
-            val modelWrapper = ExerciseGeneralModelWrapper(model::class.java)
-            val dataList = presenterClass.declaredFields.firstOrNull {
-                List::class.java.isAssignableFrom(it.type)
-            }?.get(presenter) as List<*>
-            var totalTime = 0
-            dataList.subList(1, dataList.size - 1).forEach { data ->
-                val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
-                val answer = answers?.firstOrNull()?.toString() ?: ""
-                XposedHelpers.callMethod(data, "setUserAnswer", answer)
-                val costTime = Random.nextInt(150, 250)
-                XposedHelpers.callMethod(data, "setCostTime", costTime)
-                XposedHelpers.callMethod(data, "setStrokes", answer.strokes)
-                totalTime += costTime
-            }
-            val exerciseTypeInt = runCatching {
-                XposedHelpers.callMethod(
-                    XposedHelpers.callMethod(model, "getType"),
-                    "getExerciseType"
-                ) as Int
-            }.getOrDefault(0)
-            mainHandler.postDelayed({
-                with(modelWrapper) {
-                    model.run {
-                        val uri = buildUri(totalTime.toLong(), dataList) as Uri
-                        gotoResult(activity, activity.intent, uri, exerciseTypeInt)
-                        activity.finish()
-                    }
-                }
-            }, totalTime.toLong())
-        }.onFailure {
-            logI(it)
+            mainHandler.postDelayed(performNext, 800)
         }
     }
 
@@ -426,36 +360,6 @@ class PracticeHook : BaseHook() {
 
         quickExerciseActivityClass.findMethod("onDestroy").before {
             helper?.stopHonor()
-        }
-    }
-
-    private fun hookSimpleWebActivityCompanion() {
-        val exerciseResultActivityClass = findClass(Classname.EXERCISE_RESULT_ACTIVITY)
-        val simpleWebActivityCompanionClass =
-            findClass("${Classname.SIMPLE_WEB_APP_FIREWORK_ACTIVITY}\$a")
-
-        simpleWebActivityCompanionClass.allMethod("a").before { param ->
-            if (!Practice.autoPracticeCyclic) {
-                return@before
-            }
-            val activity = param.args[0] as? Activity ?: return@before
-            if (exerciseResultActivityClass.isInstance(activity)) {
-                val interval = Practice.autoPracticeCyclicInterval
-                mainHandler.postDelayed({
-                    if (!activity.isDestroyed && !activity.isFinishing) {
-                        kotlin.runCatching {
-                            activity.findViewById<View>(
-                                activity.resources.getIdentifier(
-                                    "menu_button_again_btn", "id", activity.packageName
-                                )
-                            ).performClick()
-                        }.onFailure {
-                            logI(it)
-                        }
-                    }
-                }, interval.toLong())
-                param.result = null
-            }
         }
     }
 

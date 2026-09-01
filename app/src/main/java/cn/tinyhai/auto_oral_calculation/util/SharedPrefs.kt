@@ -24,29 +24,6 @@ object Practice {
             moduleStringRes.KEY_AUTO_PRACTICE,
             true
         )
-    val autoPracticeQuick
-        get() = autoPractice && modulePrefs.getBoolean(
-            moduleStringRes.KEY_AUTO_PRACTICE_QUICK,
-            false
-        )
-    val autoPracticeCyclic
-        get() = autoPractice && modulePrefs.getBoolean(
-            moduleStringRes.KEY_AUTO_PRACTICE_CYCLIC,
-            false
-        )
-    val autoPracticeCyclicInterval: Int
-        get() {
-            return kotlin.runCatching {
-                Integer.parseInt(
-                    modulePrefs.getString(
-                        moduleStringRes.KEY_AUTO_PRACTICE_CYCLIC_INTERVAL,
-                        ""
-                    )!!
-                )
-            }.getOrElse {
-                1500
-            }
-        }
 }
 
 object PK {

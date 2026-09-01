@@ -28,23 +28,6 @@
             android:key="@string/key_auto_practice"
             android:dependency="@string/key_auto_honor"
             android:title="练习场自动答题" />
-        <SwitchPreference
-            android:defaultValue="false"
-            android:dependency="@string/key_auto_practice"
-            android:key="@string/key_auto_practice_quick"
-            android:title="极速答题" />
-        <SwitchPreference
-            android:defaultValue="false"
-            android:dependency="@string/key_auto_practice"
-            android:key="@string/key_auto_practice_cyclic"
-            android:title="循环练习" />
-        <EditTextPreference
-            android:defaultValue="1500"
-            android:dependency="@string/key_auto_practice_cyclic"
-            android:key="@string/key_auto_practice_cyclic_interval"
-            android:inputType="number"
-            android:hint="单位毫秒，默认值1500"
-            android:title="循环时间间隔" />
     </PreferenceCategory>
     <PreferenceCategory android:title="PK">
         <ListPreference

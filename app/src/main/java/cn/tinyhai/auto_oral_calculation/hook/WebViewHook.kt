@@ -253,15 +253,13 @@ class WebViewHook : BaseHook() {
         val loadUrl = loadUrl ?: return
         val webView = webView ?: return
         webView.post {
-            // 练习场自动答题：仅在开启时注入，按「极速/标准」配置间隔
+            // 练习场自动答题：仅在开启时注入（极速/循环已移除，统一标准间隔）
             if (!Practice.autoPractice) {
                 logI("练习自动答题未开启")
                 return@post
             }
-            val quick = Practice.autoPracticeQuick
-            val interval = if (quick) 120 else 500
-            injectConfig(loadUrl, webView, "autoOral_quick", quick)
-            injectConfig(loadUrl, webView, "autoOral_interval", interval)
+            injectConfig(loadUrl, webView, "autoOral_quick", false)
+            injectConfig(loadUrl, webView, "autoOral_interval", 500)
             injectJsCode(practiceJs, loadUrl, webView)
         }
     }

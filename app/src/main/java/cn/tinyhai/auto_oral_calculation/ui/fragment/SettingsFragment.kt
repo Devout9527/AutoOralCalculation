@@ -24,12 +24,6 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
         val autoHonor: SwitchPreference = manager.findPreference(stringRes.KEY_AUTO_HONOR) as SwitchPreference
         val autoPractice: SwitchPreference =
             manager.findPreference(stringRes.KEY_AUTO_PRACTICE) as SwitchPreference
-        val autoPracticeQuick: SwitchPreference =
-            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_QUICK) as SwitchPreference
-        val autoPracticeCyclic: SwitchPreference =
-            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_CYCLIC) as SwitchPreference
-        val autoPracticeCyclicInterval: EditTextPreference =
-            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_CYCLIC_INTERVAL) as EditTextPreference
         val autoAnswerConfig: ListPreference =
             manager.findPreference(stringRes.KEY_AUTO_ANSWER_CONFIG) as ListPreference
         val customAnswerConfig: EditTextPreference =
@@ -77,16 +71,6 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
                 holder.autoAnswerConfig.summary = "当前选择: ${mode.value}"
                 holder.pkCyclic.isEnabled =
                     mode == AutoAnswerMode.QUICK || mode == AutoAnswerMode.STANDARD
-                true
-            }
-        }
-        holder.autoPracticeCyclicInterval.let {
-            var interval = kotlin.runCatching { Integer.parseInt(it.text) }.getOrElse { 1500 }
-            it.summary = "当前间隔: $interval 毫秒"
-            it.setOnPreferenceChangeListener { _, newValue ->
-                interval =
-                    kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 1500 }
-                it.summary = "当前间隔: $interval 毫秒"
                 true
             }
         }
