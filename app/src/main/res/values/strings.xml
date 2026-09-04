@@ -22,6 +22,10 @@
     <string name="key_debug">debug</string>
     <string name="key_remove_ads">remove_ads</string>
     <string name="key_no_nick_cooldown">no_nick_cooldown</string>
+    <string name="key_honor_threads">honor_threads</string>
+    <string name="key_honor_req_interval">honor_req_interval</string>
+    <string name="key_honor_answer_time">honor_answer_time</string>
+    <string name="key_honor_auto_count">honor_auto_count</string>
     <string name="key_double_nickname_length">double_nickname_length</string>
     <string name="key_remove_restriction_on_nickname">remove_restriction_on_nickname</string>
 </resources>

@@ -26,6 +26,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.api.OralApiService
+import cn.tinyhai.auto_oral_calculation.util.Honor
 import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
@@ -216,6 +217,22 @@ class PracticeHook : BaseHook() {
     // 供 H5 练习页触发自动上分：设置协程上下文 + 弹次数框 + 启动刷分循环
     fun startHonor(activity: Activity, keyPointId: String, limit: Int) {
         if (!Practice.autoHonor) return
+        // 免弹框自动刷次数（>0 时直接按配置次数开刷）
+        val autoCount = runCatching { Honor.autoCount }.getOrDefault(0)
+        if (autoCount > 0) {
+            try {
+                val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
+                val scope = XposedHelpers.callStaticMethod(lifecycleOwnerKtClass, "getLifecycleScope", activity)
+                val coroutineContext = XposedHelpers.callMethod(scope, "getCoroutineContext")
+                OralApiService.setup(coroutineContext)
+            } catch (e: Throwable) {
+                logI("honor setup fail: $e")
+            }
+            honorHelper = HonorHelper(keyPointId, limit, autoCount) { cur, total ->
+                logI("auto honor progress: $cur/$total")
+            }.also { it.startHonor() }
+            return
+        }
         try {
             val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
             val scope =
@@ -282,8 +299,8 @@ class PracticeHook : BaseHook() {
         @Volatile private var active: Boolean = true
         private val workers = mutableListOf<Thread>()
 
-        // 并发线程数（可在代码里调整，建议 2~5，视服务器承受力）
-        private val honorThreadCount = 3
+        // 并发线程数（设置可调 1~10，默认3）
+        private val honorThreadCount = Honor.threads
 
         fun stopHonor() {
             active = false
@@ -325,8 +342,8 @@ class PracticeHook : BaseHook() {
                         }
                     }
                 }
-                // 每线程请求间隔
-                Thread.sleep(1000)
+                // 每线程请求间隔（设置可调）
+                Thread.sleep(Honor.reqInterval)
             }
         }
 
@@ -351,7 +368,8 @@ class PracticeHook : BaseHook() {
                 val answers = XposedHelpers.getObjectField(it, "answers") as? List<*>
                 val answer = answers?.firstOrNull()?.toString() ?: ""
                 XposedHelpers.callMethod(it, "setUserAnswer", answer)
-                val costTime = Random.nextInt(150, 250)
+                val base = Honor.answerTime
+                val costTime = Random.nextInt(base, base + 100)
                 XposedHelpers.callMethod(it, "setCostTime", costTime)
                 XposedHelpers.callMethod(it, "setScript", answer.strokes.toJsonString())
                 XposedHelpers.callMethod(it, "setStatus", 1)

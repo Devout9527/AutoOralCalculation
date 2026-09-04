@@ -33,7 +33,7 @@ export ANDROID_HOME=/workspace/android-sdk
 ./gradlew assembleDebug --no-daemon -q 2>&1 | tail -8
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-OUT="/workspace/包发布/${APP_NAME}_${TARGET}_v${VER}_${STAMP}.apk"
+OUT="/workspace/口算高手/包发布/${APP_NAME}_${TARGET}_v${VER}_${STAMP}.apk"
 cp app/build/outputs/apk/debug/app-debug.apk "$OUT"
 chmod 666 "$OUT"
 echo ">>> 已归档: $OUT"

@@ -29,6 +29,10 @@ class StringRes(resources: Resources) {
     val KEY_DEBUG = resources.getString(R.string.key_debug)
     val KEY_REMOVE_ADS = resources.getString(R.string.key_remove_ads)
     val KEY_NO_NICK_COOLDOWN = resources.getString(R.string.key_no_nick_cooldown)
+    val KEY_HONOR_THREADS = resources.getString(R.string.key_honor_threads)
+    val KEY_HONOR_REQ_INTERVAL = resources.getString(R.string.key_honor_req_interval)
+    val KEY_HONOR_ANSWER_TIME = resources.getString(R.string.key_honor_answer_time)
+    val KEY_HONOR_AUTO_COUNT = resources.getString(R.string.key_honor_auto_count)
 }
 
 val moduleStringRes by lazy {

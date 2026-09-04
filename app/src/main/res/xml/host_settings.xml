@@ -23,6 +23,34 @@
             android:title="自动上分"
             android:disableDependentsState="true"
             android:summary="进入任意口算练习页面挂机即可"/>
+        <EditTextPreference
+            android:defaultValue="3"
+            android:dependency="@string/key_auto_honor"
+            android:key="@string/key_honor_threads"
+            android:inputType="number"
+            android:hint="1-10，默认3"
+            android:title="上分并发线程数" />
+        <EditTextPreference
+            android:defaultValue="1000"
+            android:dependency="@string/key_auto_honor"
+            android:key="@string/key_honor_req_interval"
+            android:inputType="number"
+            android:hint="毫秒，200-10000，默认1000"
+            android:title="每线程拉题间隔" />
+        <EditTextPreference
+            android:defaultValue="200"
+            android:dependency="@string/key_auto_honor"
+            android:key="@string/key_honor_answer_time"
+            android:inputType="number"
+            android:hint="毫秒，50-2000，默认200"
+            android:title="每题模拟答题时间" />
+        <EditTextPreference
+            android:defaultValue="0"
+            android:dependency="@string/key_auto_honor"
+            android:key="@string/key_honor_auto_count"
+            android:inputType="number"
+            android:hint="0=每次弹框询问，>0=免弹框自动刷"
+            android:title="免弹框自动刷次数" />
     </PreferenceCategory>
     <PreferenceCategory android:title="PK">
         <SwitchPreference
