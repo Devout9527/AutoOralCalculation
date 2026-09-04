@@ -51,4 +51,10 @@ const val HOST_PACKAGE_NAME = "com.fenbi.android.leo"
 
 const val KEY_START_SETTINGS = "key_start_settings"
 
+const val KEY_PRACTICE_MAIN_SWITCH = "key_practice_main_switch"
+const val KEY_AUTO_SCORE_MAIN_SWITCH = "key_auto_score_main_switch"
+const val KEY_PK_MAIN_SWITCH = "key_pk_main_switch"
+const val KEY_CLEAN_MAIN_SWITCH = "key_clean_main_switch"
+const val KEY_HONOR_AUTO_COUNT_MAIN = "key_honor_auto_count_main"
+
 const val PATTERN_NICKNAME = "[a-zA-Z0-9_\\-\\u4e00-\\u9fa5]*"

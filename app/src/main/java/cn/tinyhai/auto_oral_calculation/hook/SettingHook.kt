@@ -1,5 +1,11 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
+import android.app.Dialog
+import android.view.Window
+import android.view.ViewGroup
+
+import cn.tinyhai.auto_oral_calculation.util.UiKit
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -119,7 +125,7 @@ class SettingHook : BaseHook() {
         settingsActivityClass.findMethod("onResume").after { param ->
             if (shouldStartSettings) {
                 shouldStartSettings = false
-                SettingsDialog(param.thisObject as Context).show()
+                cn.tinyhai.auto_oral_calculation.ui.SettingsScreenView.showAsScreen(param.thisObject as Activity)
             }
         }
     }
@@ -161,7 +167,7 @@ class SettingHook : BaseHook() {
     ): View {
         val item = itemConstructor.newInstance(activity, null) as View
         return buildSectionItem(item, labelId, "口算糕手设置") {
-            SettingsDialog(activity).show()
+            cn.tinyhai.auto_oral_calculation.ui.SettingsScreenView.showAsScreen(activity)
         }
     }
 
@@ -204,89 +210,100 @@ class SettingHook : BaseHook() {
 
     private fun showCustomScoreDialog(activity: Activity) {
         var currentScore: Int? = null
+        val dp = activity.resources.displayMetrics.density
 
-        val targetScoreEditView = EditText(activity).apply {
+        val targetScoreEditView = UiKit.input(activity, "请输入刷取分数").apply {
             inputType = EditorInfo.TYPE_CLASS_NUMBER or EditorInfo.TYPE_NUMBER_FLAG_SIGNED
             filters = arrayOf(InputFilter.LengthFilter(12))
-            hint = "请输入刷取分数"
         }
-
-        val currentScoreTextView = TextView(activity).apply {
-            text = "当前分数：加载中"
-            textSize = 16f
-            setTextColor(Color.rgb(0x33, 0x33, 0x33))
-            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        }
-
-        val supposeScoreTextView = TextView(activity).apply {
-            text = "预计目标分数：加载中"
-            textSize = 16f
-            setTextColor(Color.rgb(0x33, 0x33, 0x33))
-            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        }
-
-        val container = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            val padding = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics
-            ).toInt()
-            setPaddingRelative(padding, padding, padding, 0)
-            addView(currentScoreTextView)
-            addView(supposeScoreTextView)
-            addView(targetScoreEditView)
-        }
-
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle("自定义分数")
-            .setView(container)
-            .setPositiveButton(android.R.string.ok, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-
-        val positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
-        positiveButton.isEnabled = false
-        targetScoreEditView.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-
-            override fun afterTextChanged(s: Editable) {
-                val curScore = currentScore ?: return
-                val obtainScore = targetScoreEditView.text.toString().toLongOrNull()
-                    ?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
-                positiveButton.isEnabled = obtainScore != null
-                if (obtainScore != null) {
-                    val suppose = curScore + obtainScore.toInt()
-                    supposeScoreTextView.text = "预计目标分数：$suppose"
-                } else {
-                    supposeScoreTextView.text = "预计目标分数：$curScore"
-                }
+        fun infoCard(label: String, init: String): Pair<LinearLayout, TextView> {
+            val v = UiKit.value(activity, init)
+            val box = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                background = UiKit.subCard(activity)
+                val p = (12 * dp).toInt()
+                setPadding(p, p * 2 / 3, p, p * 2 / 3)
+                addView(UiKit.label(activity, label))
+                addView(v)
             }
-        })
+            return box to v
+        }
+        val (curCard, currentScoreTextView) = infoCard("当前分数", "加载中")
+        val (supCard, supposeScoreTextView) = infoCard("预计目标分数", "加载中")
 
+        lateinit var dialogRef: Dialog
         fun updateCurrentScore() {
             getCurrentScore {
                 currentScore = it
-                currentScoreTextView.text = "当前分数：$currentScore"
-                supposeScoreTextView.text = "预计目标分数：$currentScore"
+                currentScoreTextView.text = "$it"
+                supposeScoreTextView.text = "$it"
             }
         }
-
-        positiveButton.setOnClickListener {
-            currentScore ?: return@setOnClickListener
-            val obtainScore = targetScoreEditView.text.toString()
-                .toLong()
-                .coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
-            targetScoreEditView.text = null
-            LegacyApiService.postSavedExp(obtainScore.toInt()) {
-                it.onSuccess {
-                    updateCurrentScore()
-                }.onFailure {
-                    logI(it)
+        val confirmBtn = TextView(activity).apply {
+            text = "确认刷分"; gravity = android.view.Gravity.CENTER
+            textSize = 15f; setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE); background = UiKit.accentBar(activity)
+            val p = (12 * dp).toInt(); setPadding(p, p * 2 / 3, p, p * 2 / 3)
+            setOnClickListener {
+                val obtainScore = targetScoreEditView.text.toString().toLongOrNull()
+                    ?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()) ?: return@setOnClickListener
+                targetScoreEditView.text = null
+                LegacyApiService.postSavedExp(obtainScore.toInt()) {
+                    it.onSuccess { updateCurrentScore() }.onFailure { t -> logI(t) }
                 }
             }
         }
-
+        val cancelBtn = TextView(activity).apply {
+            text = "取消"; gravity = android.view.Gravity.CENTER
+            textSize = 15f; setTextColor(UiKit.textSub); background = UiKit.subCard(activity)
+            val p = (12 * dp).toInt(); setPadding(p, p * 2 / 3, p, p * 2 / 3)
+            setOnClickListener { dialogRef.dismiss() }
+        }
+        val btnRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(cancelBtn, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = (10 * dp).toInt() })
+            addView(confirmBtn, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        }
+        val container = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (18 * dp).toInt()
+            setPadding(pad, (22 * dp).toInt(), pad, pad)
+            setBackgroundColor(Color.WHITE)
+            addView(UiKit.title(activity, "自定义分数"))
+            addView(UiKit.sub(activity, "直接上报经验，服务端可能有单次/每日限制"))
+            addView(View(activity), LinearLayout.LayoutParams(1, (14 * dp).toInt()))
+            addView(curCard)
+            addView(View(activity), LinearLayout.LayoutParams(1, (8 * dp).toInt()))
+            addView(supCard)
+            addView(View(activity), LinearLayout.LayoutParams(1, (14 * dp).toInt()))
+            addView(targetScoreEditView)
+            addView(View(activity), LinearLayout.LayoutParams(1, (16 * dp).toInt()))
+            addView(btnRow)
+        }
+        confirmBtn.isEnabled = false; confirmBtn.alpha = 0.5f
+        targetScoreEditView.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable) {
+                val cur = currentScore
+                val v = s.toString().toLongOrNull()
+                val ok = cur != null && v != null && v != 0L
+                confirmBtn.isEnabled = ok; confirmBtn.alpha = if (ok) 1f else 0.5f
+                if (cur != null) {
+                    val suppose = if (v != null) cur + v.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt() else cur
+                    supposeScoreTextView.text = "$suppose"
+                }
+            }
+        })
+        dialogRef = Dialog(activity).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setContentView(container)
+            window?.apply {
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+                setLayout((320f * dp).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            show()
+        }
         updateCurrentScore()
     }
 

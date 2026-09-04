@@ -26,6 +26,11 @@
     <string name="key_honor_req_interval">honor_req_interval</string>
     <string name="key_honor_answer_time">honor_answer_time</string>
     <string name="key_honor_auto_count">honor_auto_count</string>
+    <string name="key_practice_main_switch">practice_main_switch</string>
+    <string name="key_auto_score_main_switch">auto_score_main_switch</string>
+    <string name="key_pk_main_switch">pk_main_switch</string>
+    <string name="key_clean_main_switch">clean_main_switch</string>
+    <string name="key_honor_auto_count_main">honor_auto_count_main</string>
     <string name="key_double_nickname_length">double_nickname_length</string>
     <string name="key_remove_restriction_on_nickname">remove_restriction_on_nickname</string>
 </resources>

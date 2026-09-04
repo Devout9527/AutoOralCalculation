@@ -33,6 +33,11 @@ class StringRes(resources: Resources) {
     val KEY_HONOR_REQ_INTERVAL = resources.getString(R.string.key_honor_req_interval)
     val KEY_HONOR_ANSWER_TIME = resources.getString(R.string.key_honor_answer_time)
     val KEY_HONOR_AUTO_COUNT = resources.getString(R.string.key_honor_auto_count)
+    val KEY_PRACTICE_MAIN_SWITCH = resources.getString(R.string.key_practice_main_switch)
+    val KEY_AUTO_SCORE_MAIN_SWITCH = resources.getString(R.string.key_auto_score_main_switch)
+    val KEY_PK_MAIN_SWITCH = resources.getString(R.string.key_pk_main_switch)
+    val KEY_CLEAN_MAIN_SWITCH = resources.getString(R.string.key_clean_main_switch)
+    val KEY_HONOR_AUTO_COUNT_MAIN = resources.getString(R.string.key_honor_auto_count_main)
 }
 
 val moduleStringRes by lazy {
